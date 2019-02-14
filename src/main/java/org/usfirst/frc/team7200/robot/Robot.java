@@ -28,6 +28,7 @@ import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.Solenoid;
 import edu.wpi.first.wpilibj.buttons.Trigger;
 import edu.wpi.first.wpilibj.interfaces.Gyro;
+import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.ADXRS450_Gyro;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.I2C;
@@ -44,17 +45,15 @@ import java.io.InputStreamReader;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
-
-import org.java_websocket.WebSocket;
-import org.java_websocket.WebSocketImpl;
-import org.java_websocket.framing.Framedata;
-import org.java_websocket.handshake.ClientHandshake;
-import org.java_websocket.server.WebSocketServer;
-
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.networktables.NetworkTableEntry;
 
 public class Robot extends IterativeRobot {
 
 	Command autoCommand;
+	double rpi_Turn;
+	NetworkTableEntry rpi_TurnE;
 	/****************************************************************************************************/
 	DigitalInput b_ballIn = new DigitalInput(2);// check for ball in bucket
 	DigitalInput b_diskOn = new DigitalInput(3);
@@ -66,6 +65,7 @@ public class Robot extends IterativeRobot {
 	/****************************************************************************************************/
 	protected DifferentialDrive m_myRobot; // basic driving variables
 	protected Joystick driverstick = new Joystick(0);
+	protected Joystick techstick = new Joystick(1);
 	/****************************************************************************************************/
 	protected Compressor p = new Compressor(0); // pneumatics control variables
 	Solenoid p_shootSolenoid = new Solenoid(0);
@@ -89,20 +89,28 @@ public class Robot extends IterativeRobot {
 
 	/****************************************************************************************************/
 
-	TalonSRX m_ballIn = new TalonSRX(1); // elevator control variables
-	VictorSPX m_eject = new VictorSPX(2);
+	TalonSRX m_eject = new TalonSRX(1); // elevator control variables
+	VictorSPX m_ballIn = new VictorSPX(2);
 	TalonSRX m_tilt = new TalonSRX(3);
 	boolean ballIn;
 	boolean diskOn;
 	boolean liftenable;
 	boolean lifttopMax;
 	boolean liftdownMin;
-	String rpi_IP;
+	boolean levelQue;
+	boolean downRequest;
+	boolean levelReq;
+	boolean level2Req;
+	boolean level3Req;
+	Timer popTime = new Timer();
 
 	/****************************************************************************************************/
 
 	@Override
 	public void robotInit() {
+		NetworkTableInstance inst = NetworkTableInstance.getDefault();
+		NetworkTable table = inst.getTable("datatable");
+		rpi_TurnE = table.getEntry("angle");
 
 		Spark m_left0 = new Spark(0); // motors are plugged into ports 0,1,2,3 into the roborio
 		Spark m_left1 = new Spark(1);
@@ -129,19 +137,45 @@ public class Robot extends IterativeRobot {
 		m_liftMotor.set(0);
 		m_ballIn.set(ControlMode.PercentOutput, 0);
 		m_eject.set(ControlMode.PercentOutput, 0);
-		rpi_IP = "192.168.0.102";
-
+		levelQue = false;
+		levelReq = false;
+		level2Req = false;
+		level3Req = false;
+		downRequest = false;
 
 	}
 
 	@Override
 	public void autonomousInit() {
-		turnSpeed = 0;
 	}
 
 	@Override
 	public void autonomousPeriodic() {
+		NetworkTableInstance inst = NetworkTableInstance.getDefault();
+		NetworkTable table = inst.getTable("datatable");
+		rpi_TurnE = table.getEntry("angle");
+		rpi_Turn = rpi_TurnE.getDouble(0);
+		System.out.println(rpi_Turn);
 
+
+		// auto ball pick up - this needs tweaking
+
+		//if(rpi_Turn)
+
+			double driveAngle = (rpi_Turn - 192) / 100;
+
+			m_myRobot.arcadeDrive(0.6, turnSpeed);
+
+			turnSpeed = driveAngle;
+
+			if (turnSpeed > 0.6) {
+				turnSpeed = 0.6;
+			}
+
+			if (turnSpeed < -0.6) {
+				turnSpeed = -0.6;
+		
+		}
 	}
 
 	@Override
@@ -149,27 +183,52 @@ public class Robot extends IterativeRobot {
 		CameraServer.getInstance().startAutomaticCapture();// start the camera
 
 		turnSpeed = 0;
-	
+
 	}
 
 	@Override
 	public void teleopPeriodic() {
 
+		// rpi_TurnE.setDouble(rpi_Turn);
 		// notes - configure spark max and talon and victor spx CANOPEN addresses
 
 		boolean normalDrive = driverstick.getRawButton(10); // declaring what the joystick buttons are
 		boolean revDrive = driverstick.getRawButton(12);
 		double robotSpeed = (driverstick.getThrottle() - 1.0) / -2;
-		boolean punch = driverstick.getRawButton(2);
+		boolean autoRun = driverstick.getRawButton(2);
+
 		boolean level1 = driverstick.getRawButton(3);
+		boolean level1d = techstick.getRawButton(3);
 		boolean level2 = driverstick.getRawButton(4);
+		boolean level2d = techstick.getRawButton(4);
 		boolean level3 = driverstick.getRawButton(6);
+		boolean level3d = techstick.getRawButton(6);
 		boolean down = driverstick.getRawButton(5);
-		boolean sendymabob = driverstick.getRawButton(7);
-		boolean sendoff = driverstick.getRawButton(9);
-		boolean autoRun = driverstick.getTrigger();
-		boolean liftInit = driverstick.getRawButton(5);
-		double speed = 0.6;
+		boolean downd = techstick.getRawButton(5);
+
+		boolean autoLockout = driverstick.getTrigger();
+
+		if ((level1 || level1d) && !levelQue) {
+			levelQue = true;
+			levelReq = !levelReq;
+		}
+		if ((level2 || level2d) && !levelQue) {
+			levelQue = true;
+			level2Req = !level2Req;
+		}
+		if ((level3 || level3d) && !levelQue) {
+			levelQue = true;
+			level3Req = !level3Req;
+		}
+		if ((down || downd) && !levelQue) {
+			levelQue = true;
+			downRequest = !downRequest;
+		}
+		if (!level1 && !level1d && !level2 && !level2d && !level3 && !level3d && !down && downd) {
+			levelQue = false;
+		}
+
+		System.out.println(driverstick.getPOV());
 
 		double range = s_sensor.getRangeInches();
 
@@ -177,13 +236,10 @@ public class Robot extends IterativeRobot {
 
 		m_liftMotor.set(0);
 
-		p_shootSolenoid.set(false);
-		p_retractSolenoid.set(true);
-		System.out.println(i2cbuffer[0]);
 		m_myRobot.arcadeDrive(driverstick.getY() * robotSpeed * stickReverse, driverstick.getX() * robotSpeed);
 
 		/****************************************************************************************************/
-
+		// checking the switches
 		if (b_ballIn.get()) {
 
 			ballIn = false;// AKA no object in bucket
@@ -223,15 +279,16 @@ public class Robot extends IterativeRobot {
 
 			liftdownMin = false;
 		}
+
 		/****************************************************************************************************/
-		if (autoRun) { // auto ball pick up - this needs tweaking
+		if (autoRun && !ballIn) { // auto ball pick up - this needs tweaking
 
 			liftenable = true;
 
 			Wire.read(1, 1, i2cbuffer);
 
 			double servoangle = Math.abs(i2cbuffer[0]);
-			double driveAngle = (servoangle - 192) / 30;
+			double driveAngle = (servoangle - 90) / 30;
 
 			m_myRobot.arcadeDrive(0.6, turnSpeed);
 
@@ -246,11 +303,11 @@ public class Robot extends IterativeRobot {
 			}
 			if (!ballIn) {
 
-				if (range <= 12) {
+				if (range <= 32) {
 					m_myRobot.arcadeDrive(0.6, turnSpeed);
 
-					m_ballIn.set(ControlMode.PercentOutput, 1);
-					m_eject.set(ControlMode.PercentOutput, -0.3);
+					m_ballIn.set(ControlMode.PercentOutput, -0.8);
+					m_eject.set(ControlMode.PercentOutput, 0.2);
 				}
 
 				else {
@@ -264,9 +321,114 @@ public class Robot extends IterativeRobot {
 			}
 		}
 
-		/****************************************************************************************************
+		/****************************************************************************************************/
+		if (driverstick.getPOV() != -1) {
 
-		if (!lifttopMax && !liftdownMin) {
+			if (driverstick.getPOV() == 180) {
+				m_ballIn.set(ControlMode.PercentOutput, -0.8);
+			}
+
+			if (driverstick.getPOV() == 0 && diskOn) {
+				p_shootSolenoid.set(true);
+				p_retractSolenoid.set(false);
+			}
+			if (driverstick.getPOV() == 0 && ballIn){
+
+			}
+
+		} else {
+			p_shootSolenoid.set(false);
+			p_retractSolenoid.set(true);
+
+			m_ballIn.set(ControlMode.PercentOutput, 0);
+			m_eject.set(ControlMode.PercentOutput, 0);
+		}
+		/****************************************************************************************************/
+
+		if (revDrive) {
+
+			stickReverse = -1.0;
+			m_myRobot.arcadeDrive((driverstick.getY() * -1) * 0.7 * stickReverse, (driverstick.getX()) * 0.7);
+
+		}
+
+		if (normalDrive) {
+
+			stickReverse = 1;
+			m_myRobot.arcadeDrive((driverstick.getY() * -1) * 0.7 * stickReverse, (driverstick.getX()) * 0.7);
+
+		}
+
+		/****************************************************************************************************/
+		if (level1 && autoLockout) {
+			m_liftMotor.set(1.0);
+		}
+
+		if (level2 && autoLockout) {
+			m_liftMotor.set(-0.5);
+		}
+		if (autoLockout && !level1 && level2) {
+			m_liftMotor.set(0);
+		}
+		/****************************************************************************************************/
+
+		
+		/****************************************************************************************************/
+		if (ballIn && !lifttopMax && !liftdownMin && !autoLockout) {
+
+			if (level1 && m_encoder.getPosition() <= 250) {
+
+				double liftspeed = (m_encoder.getPosition() - 250) / -20;
+
+				if (liftspeed >= 1.0) {
+					liftspeed = 1.0;
+				}
+
+				m_liftMotor.set(liftspeed);
+
+			}
+			if (level1 == true && m_encoder.getPosition() >= 250) {
+
+				m_liftMotor.set(0);
+			}
+
+			if (level2 == true && m_encoder.getPosition() <= 500) {
+
+				double liftspeed = (m_encoder.getPosition() - 500) / -20;
+
+				if (liftspeed >= 1.0) {
+					liftspeed = 1.0;
+				}
+
+				m_liftMotor.set(liftspeed);
+
+			}
+
+			if (level2 == true && m_encoder.getPosition() >= 500) {
+				m_liftMotor.set(0);
+			}
+
+			if (level1 == false && level2 == false && level3 == false && down == false) {
+				m_liftMotor.set(0);
+			}
+
+			if (down && m_encoder.getPosition() >= 50) {
+
+				double liftspeed = (m_encoder.getPosition()) / -20;
+
+				if (liftspeed <= -0.6) {
+					liftspeed = -0.6;
+				}
+
+				m_liftMotor.set(liftspeed);
+
+			}
+			if (down == true && m_encoder.getPosition() <= 50) {
+				m_liftMotor.set(0);
+			}
+		}
+
+		if (diskOn && !lifttopMax && !liftdownMin && !autoLockout) {
 
 			if (level1 == true && m_encoder.getPosition() <= 100) {
 
@@ -283,12 +445,13 @@ public class Robot extends IterativeRobot {
 
 				m_liftMotor.set(0);
 			}
+
 			if (level2 == true && m_encoder.getPosition() <= 200) {
 
 				double liftspeed = (m_encoder.getPosition() - 200) / -10;
 
-				if (liftspeed >= 0.7) {
-					liftspeed = 0.7;
+				if (liftspeed >= 1.0) {
+					liftspeed = 1.0;
 				}
 
 				m_liftMotor.set(liftspeed);
@@ -307,201 +470,22 @@ public class Robot extends IterativeRobot {
 
 				double liftspeed = (m_encoder.getPosition()) / -10;
 
-				if (liftspeed <= -0.7) {
-					liftspeed = -0.7;
+				if (liftspeed <= -0.6) {
+					liftspeed = -0.6;
 				}
 
 				m_liftMotor.set(liftspeed);
 
 			}
-			if (down == true && m_encoder.getPosition() <= 10) {
+			if (down == true && m_encoder.getPosition() <= 50) {
 				m_liftMotor.set(0);
 			}
-		}
-
-		if (diskOn == true && lifttopMax == false && liftdownMin == false) {
-
-			if (level1 == true && m_encoder.getPosition() <= 100) {
-
-				double liftspeed = (m_encoder.getPosition() - 100) / -10;
-
-				if (liftspeed >= 0.7) {
-					liftspeed = 0.7;
-				}
-
-				m_liftMotor.set(liftspeed);
-
-			}
-			if (level1 == true && m_encoder.getPosition() >= 100) {
-
-				m_liftMotor.set(0);
-			}
-			if (level2 == true && m_encoder.getPosition() <= 200) {
-
-				double liftspeed = (m_encoder.getPosition() - 200) / -10;
-
-				if (liftspeed >= 0.7) {
-					liftspeed = 0.7;
-				}
-
-				m_liftMotor.set(liftspeed);
-
-			}
-
-			if (level2 == true && m_encoder.getPosition() >= 200) {
-				m_liftMotor.set(0);
-			}
-
-			if (level1 == false && level2 == false && level3 == false && down == false) {
-				m_liftMotor.set(0);
-			}
-
-			if (down && m_encoder.getPosition() >= 10) {
-
-				double liftspeed = (m_encoder.getPosition()) / -10;
-
-				if (liftspeed <= -0.7) {
-					liftspeed = -0.7;
-				}
-
-				m_liftMotor.set(liftspeed);
-
-			}
-			if (down == true && m_encoder.getPosition() <= 10) {
-				m_liftMotor.set(0);
-			}
-		}
-
-		
-		****************************************************************************************************/
-
-		// code for reversing drive direction
-
-		if (revDrive) {
-
-			stickReverse = -1.0;
-			m_myRobot.arcadeDrive((driverstick.getY() * -1) * 0.7 * stickReverse, (driverstick.getX()) * 0.7);
-
-		}
-
-		if (normalDrive) {
-
-			stickReverse = 1;
-			m_myRobot.arcadeDrive((driverstick.getY() * -1) * 0.7 * stickReverse, (driverstick.getX()) * 0.7);
-
-		}
-
-		/****************************************************************************************************/
-
-		if (punch && !ballIn) { // code for solenoid
-
-			p_shootSolenoid.set(true);
-			p_retractSolenoid.set(false);
-
-			m_myRobot.arcadeDrive((driverstick.getY() * -1) * 0.7 * stickReverse, (driverstick.getX()) * 0.7);
 		}
 		/****************************************************************************************************/
 
-		if (driverstick.getRawButton(5)) {
-			m_ballIn.set(ControlMode.PercentOutput, 1.0);
-
-			m_eject.set(ControlMode.PercentOutput, -0.8);
-		} else {
-			m_ballIn.set(ControlMode.PercentOutput, 0);
-
-			m_eject.set(ControlMode.PercentOutput, 0);
-		}
-
-		/****************************************************************************************************/
-
-		if (sendymabob) { // writing stuff to i2c address 1 arduino
-			Wire.write(1, 1);
-
-		}
-		if (sendoff) {
-			Wire.write(1, 0);
-
-		}
-
-		/****************************************************************************************************/
-		
 	}
 
 	@Override
 	public void testPeriodic() {
 	}
-
-	private class ChatServer extends WebSocketServer {
-
-		public ChatServer( int port ) throws UnknownHostException {
-			super( new InetSocketAddress( port ) );
-		}
-	
-		public ChatServer( InetSocketAddress address ) {
-			super( address );
-		}
-	
-		@Override
-		public void onOpen( WebSocket conn, ClientHandshake handshake ) {
-			conn.send("Welcome to the server!"); //This method sends a message to the new client
-			broadcast( "new connection: " + handshake.getResourceDescriptor() ); //This method sends a message to all clients connected
-			System.out.println( conn.getRemoteSocketAddress().getAddress().getHostAddress() + " entered the room!" );
-		}
-	
-		@Override
-		public void onClose( WebSocket conn, int code, String reason, boolean remote ) {
-			broadcast( conn + " has left the room!" );
-			System.out.println( conn + " has left the room!" );
-		}
-	
-		@Override
-		public void onMessage( WebSocket conn, String message ) {
-			broadcast( message );
-			System.out.println( conn + ": " + message );
-		}
-		@Override
-		public void onMessage( WebSocket conn, ByteBuffer message ) {
-			broadcast( message.array() );
-			System.out.println( conn + ": " + message );
-		}
-	
-	
-		private void main( String[] args ) throws InterruptedException , IOException {
-			int port = 8887; // 843 flash policy port
-			try {
-				port = Integer.parseInt( args[ 0 ] );
-			} catch ( Exception ex ) {
-			}
-			ChatServer s = new ChatServer( port );
-			s.start();
-			System.out.println( "ChatServer started on port: " + s.getPort() );
-	
-			BufferedReader sysin = new BufferedReader( new InputStreamReader( System.in ) );
-			while ( true ) {
-				String in = sysin.readLine();
-				s.broadcast( in );
-				if( in.equals( "exit" ) ) {
-					s.stop(1000);
-					break;
-				}
-			}
-		}
-		@Override
-		public void onError( WebSocket conn, Exception ex ) {
-			ex.printStackTrace();
-			if( conn != null ) {
-				// some errors like port binding failed may not be assignable to a specific websocket
-			}
-		}
-	
-		@Override
-		public void onStart() {
-			System.out.println("Server started!");
-			setConnectionLostTimeout(0);
-			setConnectionLostTimeout(100);
-		}
-	
-	}
-	
-
 }
