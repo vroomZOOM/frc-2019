@@ -56,7 +56,7 @@ public class Robot extends IterativeRobot {
 	NetworkTableEntry rpi_TurnE;// raspberry stuff
 	/****************************************************************************************************/
 	DigitalInput b_ballIn = new DigitalInput(2);// check for ball in bucket
-	DigitalInput limitUp = new DigitalInput(4);// top limit switch
+	DigitalInput limitUp = new DigitalInput(3);// top limit switch
 	DigitalInput limitDown = new DigitalInput(5);// bottom limit switch
 	/****************************************************************************************************/
 	SendableChooser<Integer> teamStatus;// smart dasboard stuff
@@ -82,7 +82,7 @@ public class Robot extends IterativeRobot {
 	double turnSpeed;
 	Ultrasonic s_sensor = new Ultrasonic(0, 1);// ping, then echo
 	/****************************************************************************************************/
-	private static final int liftDeviceID = 0;// elevator BRUSHLESS motor
+	private static final int liftDeviceID = 5;// elevator BRUSHLESS motor
 	private CANSparkMax m_liftMotor;
 	private CANEncoder m_encoder;
 	/****************************************************************************************************/
@@ -147,7 +147,7 @@ public class Robot extends IterativeRobot {
 		downRequest = false;
 		timerstarted = false;
 		testVar = false;
-		shootswitch = false;
+		shootswitch = true;
 		donotDeploy = false;
 		crazyMode = false;
 		targetLock = false;
@@ -155,37 +155,55 @@ public class Robot extends IterativeRobot {
 
 	@Override
 	public void autonomousInit() {
+		turnSpeed = 0;
 	}
 
 	@Override
 	public void autonomousPeriodic() {
+
 		NetworkTableInstance inst = NetworkTableInstance.getDefault();
 		NetworkTable table = inst.getTable("datatable");
 		rpi_TurnE = table.getEntry("angle");
 		rpi_Turn = rpi_TurnE.getDouble(0);
 		System.out.println(rpi_Turn);
+		System.out.println((rpi_Turn - 160)/200);
 
 		// auto ball pick up - this needs tweaking
 
 		// if(rpi_Turn)
 		if (driverstick.getTrigger()) {
-			int reverse = -1;
-			double turnspeed = 0.5;
+
+			double drive = (rpi_Turn - 160)/400;
+
+
+			m_myRobot.arcadeDrive(0, turnSpeed);
+
+			turnSpeed = drive;
+
+			System.out.println(turnSpeed);
+		}
+		else{
+			m_myRobot.arcadeDrive(driverstick.getY(), driverstick.getX());	
+		}
+			/*
+			int reverse = 1;
+			double turnspeed = 0.4;
 			if (rpi_Turn == 0) {
 				m_myRobot.arcadeDrive(0, 0);
 			}
 			if (rpi_Turn == 1) {
-				m_myRobot.arcadeDrive(0.4, reverse * 1 * turnspeed);
+				m_myRobot.arcadeDrive(0.5, reverse * 1 * turnspeed);
 			}
 			if (rpi_Turn == 2) {
-				m_myRobot.arcadeDrive(0.6, 0);
+				m_myRobot.arcadeDrive(0.5, 0);
 			}
 			if (rpi_Turn == 3) {
-				m_myRobot.arcadeDrive(0.4, reverse * -1 * turnspeed);
+				m_myRobot.arcadeDrive(0.5, reverse * -1 * turnspeed);
 			}
 		} else {
 			m_myRobot.arcadeDrive(0, 0);
 		}
+*/
 	}
 
 	@Override
@@ -212,6 +230,7 @@ public class Robot extends IterativeRobot {
 		boolean revDrive = driverstick.getRawButton(12);
 		double robotSpeed = (driverstick.getThrottle() - 1.0) / -2;// speed control of the robot
 		boolean autoRun = driverstick.getRawButton(2);
+		boolean autoRund = techstick.getRawButton(2);
 
 		boolean level1 = driverstick.getRawButton(3);
 		boolean level1d = techstick.getRawButton(3);
@@ -221,15 +240,13 @@ public class Robot extends IterativeRobot {
 		boolean downd = techstick.getRawButton(5);
 
 		boolean autoLockout = driverstick.getTrigger();
-		boolean techLock = techstick.getTrigger();
+		boolean techLock = techstick.getRawButton(9);
 		crazyMode = techstick.getRawButton(12);
 
 		NetworkTableInstance inst = NetworkTableInstance.getDefault();
 		NetworkTable table = inst.getTable("datatable");
 		rpi_TurnE = table.getEntry("angle");
 		rpi_Turn = rpi_TurnE.getDouble(0);
-		
-	
 
 		if ((level1 || level1d) && !levelQue) {// if button 3 on either joystick is pressed and has not been held down
 			levelQue = true;// request elevator to move to level1
@@ -259,11 +276,10 @@ public class Robot extends IterativeRobot {
 		}
 
 		double range = s_sensor.getRangeInches();// range is thedistance that the sensor gets
-		
 
-		Wire.read(1, 1, i2cbuffer);
+		Wire.read(1, 2, i2cbuffer);
 
-		if (Math.abs(i2cbuffer[1]) == 1) {
+		if (i2cbuffer[1] == 1) {
 			targetLock = false;
 			targetDetect = "ball in front of bot, enable auto for pickup";
 			ballDetect = true;
@@ -272,23 +288,25 @@ public class Robot extends IterativeRobot {
 			targetLock = true;
 			targetDetect = "line detected, auto may be activated";
 			ballDetect = false;
-		} else {
+		}
+		if (rpi_Turn == 0 && i2cbuffer[1] == 0) {
 			targetLock = false;
-			ballDetect = true;
+			ballDetect = false;
 			targetDetect = "no object detected, auto will not function";
 		}
-
+		// System.out.println(range);
 		m_liftMotor.set(0);
 
 		m_myRobot.arcadeDrive(driverstick.getY() * robotSpeed * stickReverse, driverstick.getX() * robotSpeed);// drives
 																												// the
 																												// robot
 
-		if (techstick.getRawButton(10)) {
+		//if (techstick.getRawButton(10)) {
 			Wire.write(1, 1);// turns leds on
-		} else {
-			Wire.write(1, 0);// turns leds off
-		}
+		//} 
+		//else {
+		//	Wire.write(1, 0);// turns leds off
+		//}
 
 		/****************************************************************************************************/
 		// checking the switches
@@ -325,70 +343,17 @@ public class Robot extends IterativeRobot {
 		}
 		// ATTENTION - MAKE CODE TO WRITE TO SMARTDASHBOARD WHAT IS DETECTED
 		/****************************************************************************************************/
-		if (autoRun) { // auto ball pick up - if the auto mode is enabled
+		if (autoRun || autoRund) { // auto ball pick up - if the auto mode is enabled
 
 			if (ballDetect) {
 
 				Wire.read(1, 1, i2cbuffer);// read the pixy values
+				m_ballIn.set(ControlMode.PercentOutput, -1.0);
 
-				double servoangle = Math.abs(i2cbuffer[0]);
-				double driveAngle = (servoangle - 158) / 53;
+				double servoangle = (i2cbuffer[0]);
+				double driveAngle = (servoangle) / 15;
 
 				m_myRobot.arcadeDrive(0.6, turnSpeed);// drive the robot
-
-				turnSpeed = driveAngle;
-
-				if (turnSpeed > 0.6) {
-					turnSpeed = 0.6;
-				}
-
-				if (turnSpeed < -0.6) {
-					turnSpeed = -0.6;
-				}
-				if (!ballIn) {// if there is no ball in the bucket, activate appropriate motors to pick up
-
-					if (range <= 32) {
-						m_myRobot.arcadeDrive(0.6, turnSpeed);
-
-						m_ballIn.set(ControlMode.PercentOutput, -0.8);
-						m_eject.set(ControlMode.PercentOutput, 0.2);
-					}
-
-					else {
-
-						m_myRobot.arcadeDrive(0.6, turnSpeed);
-
-						m_ballIn.set(ControlMode.PercentOutput, 0);
-						m_eject.set(ControlMode.PercentOutput, 0);
-					}
-
-				}
-			}
-
-			if(targetLock){
-				
-
-				
-				double driveAngle = (rpi_Turn - 192) / 64;
-
-				double driveDist;
-
-				if (shootswitch){
-					driveDist = (range - 20)/20;
-					if (driveDist >= 0.7){
-						driveDist = 0.7;
-					}
-				}
-
-				else{
-					driveDist = (range - 36)/20;
-
-					if (driveDist >= 0.7){
-						driveDist = 0.7;
-					}	
-				}
-
-				m_myRobot.arcadeDrive(driveDist, turnSpeed);// drive the robot
 
 				turnSpeed = driveAngle;
 
@@ -400,30 +365,71 @@ public class Robot extends IterativeRobot {
 					turnSpeed = -0.7;
 				}
 
-			
-				}
+				if (!ballIn) {// if there is no ball in the bucket, activate appropriate motors to pick up
 
+					if (range <= 40) {
+						m_myRobot.arcadeDrive(0.6, turnSpeed);
+
+						m_ballIn.set(ControlMode.PercentOutput, -1.0);
+						// m_eject.set(ControlMode.PercentOutput, 0.2);
+					}
+
+					else {
+
+						m_myRobot.arcadeDrive(0.6, turnSpeed);
+
+						m_ballIn.set(ControlMode.PercentOutput, -1.0);
+						m_eject.set(ControlMode.PercentOutput, 0);
+					}
+
+				}
 			}
-		
+
+			if (targetLock) {
+
+				int reverse = 1;
+				double turnspeed = 0.5;
+				if (rpi_Turn == 0) {
+					m_myRobot.arcadeDrive(0, 0);
+				}
+				if (rpi_Turn == 1) {
+					m_myRobot.arcadeDrive(0.5, reverse * 1 * turnspeed);
+				}
+				if (rpi_Turn == 2) {
+					m_myRobot.arcadeDrive(0.5, 0);
+				}
+				if (rpi_Turn == 3) {
+					m_myRobot.arcadeDrive(0.5, reverse * -1 * turnspeed);
+				}
+			}
+
+		}
 
 		/****************************************************************************************************/
-		if (driverstick.getPOV() != -1) {// if hat switch is pushed - this section may be confusing the pov switch on
-											// the joystick returns a value of -1 if not pressed
+		if ((driverstick.getPOV() != -1) || (techstick.getPOV() != -1)) {// if hat switch is pushed - this section may
+																			// be
+																			// confusing the pov switch on
+			// the joystick returns a value of -1 if not pressed
 
-			if (driverstick.getPOV() == 180) {// if its pushed back, suck the ball in
+			if (driverstick.getPOV() == 180 || techstick.getPOV() == 180) {// if its pushed back, suck the ball in
 				m_ballIn.set(ControlMode.PercentOutput, -0.8);// runs the motor to pull the ball in
+				m_eject.set(ControlMode.PercentOutput, -0.7);
 			}
 
-			if (driverstick.getPOV() == 0 && !ballIn && timer.get() >= 2) {// if there is no ball and the switch is
-																			// pushed forward and more than 5 seconds
-																			// have passed since there was a ball in the
-																			// robot
+			if ((driverstick.getPOV() == 0 || techstick.getPOV() == 0) && !ballIn && timer.get() >= 2) {// if there is
+																										// no ball and
+																										// the switch is
+				// pushed forward and more than 5 seconds
+				// have passed since there was a ball in the
+				// robot
 				p_shootSolenoid.set(true);
 				p_retractSolenoid.set(false);
 			}
 
-			if (driverstick.getPOV() == 0 && ballIn) {// if the pov switch is pushed forward and there is a ball in the
-														// bot
+			if (((driverstick.getPOV() == 0 || techstick.getPOV() == 0) && ballIn)) {// if the pov switch is pushed
+																						// forward and there is a ball
+																						// in the
+				// bot
 
 				if (!timerstarted) {// if the timer has not already started
 
@@ -458,11 +464,11 @@ public class Robot extends IterativeRobot {
 				else { // if pistons are up, same idea as above, just spools the motors faster and
 						// longer
 
-					m_eject.set(ControlMode.PercentOutput, -0.8);
+					m_eject.set(ControlMode.PercentOutput, -0.7);
 
 					if (popTime.get() >= 1.0) {
 
-						m_eject.set(ControlMode.PercentOutput, -1.0);
+						m_eject.set(ControlMode.PercentOutput, -0.8);
 						m_ballIn.set(ControlMode.PercentOutput, -1.0);
 						timer.reset();
 						timer.start();
@@ -480,7 +486,8 @@ public class Robot extends IterativeRobot {
 
 		}
 
-		else {// if the pov switch is not pressed
+		if (((driverstick.getPOV() == -1) && (techstick.getPOV() == -1)) && !autoRun && !autoRund) {// if the pov switch
+																									// is not pressed
 			testVar = false;
 			timerstarted = false;
 			popTime.reset();// reset and stop the timer
@@ -509,12 +516,13 @@ public class Robot extends IterativeRobot {
 		}
 
 		/****************************************************************************************************/
-		if (driverstick.getRawButton(7)) {// if button 7 is pressed, lower the piston to change the shooting angle
+		if (driverstick.getRawButton(7) || techstick.getRawButton(7)) {// if button 7 is pressed, lower the piston to
+																		// change the shooting angle
 			p_Deploy.set(true);
 			p_unDeploy.set(false);
 			shootswitch = false;
 		}
-		if (driverstick.getRawButton(8)) {// if button 8 is pressed, raise the pistons
+		if (driverstick.getRawButton(8) || techstick.getRawButton(8)) {// if button 8 is pressed, raise the pistons
 			p_Deploy.set(false);
 			p_unDeploy.set(true);
 			shootswitch = true;
@@ -524,18 +532,21 @@ public class Robot extends IterativeRobot {
 			m_liftMotor.set(1.0);// if auto mode override, manually raise the elevator
 		}
 
-		if (level2d && techLock) {// if auto mode override, manually lower the elevator
+		if (downd && techLock) {// if auto mode override, manually lower the elevator
 			m_liftMotor.set(-0.5);
 		}
-		if (techLock && !level1d && !level2d) {// if there is manual override stop the motor if nothing else is selected
+		if (techLock && !level1d && !downd) {// if there is manual override stop the motor if nothing else is selected
 			m_liftMotor.set(0);
 		}
 
 		/****************************************************************************************************/
-		if (ballIn && !autoLockout && !techLock) {// if manual override is not activated and the bot has a ball
+		if (ballIn && !autoLockout && !techLock && m_encoder.getPosition() <= 510 && !lifttopMax) {// if manual override
+																									// is not activated
+																									// and the bot has a
+																									// ball
 
-			if (levelReq) {// if level1 requested and the motor has not yet got to
-																// position 250
+			if (levelReq && !lifttopMax) {// if level1 requested and the motor has not yet got to
+											// position 250
 
 				double liftspeed = (m_encoder.getPosition() - 250) / -20;// this sets the lift speed and slows the motor
 																			// down as it gets nearer to its stopping
@@ -545,15 +556,18 @@ public class Robot extends IterativeRobot {
 					liftspeed = 1.0;// the motor cannot run faster than 1.0, so if a faster run is requested, this
 									// will constrain the value
 				}
-				if (liftspeed <= -0.8){
-					liftspeed = 0.8;
+				if (liftspeed <= -0.8) {
+					liftspeed = -0.8;
 				}
 
 				m_liftMotor.set(liftspeed);// run the motor
 
 			}
-			
-			if (level2Req && m_encoder.getPosition() <= 500) {// same as above
+			if (lifttopMax) {//if lift has hit the limit STOP it PRONTO
+				m_liftMotor.set(0);
+			}
+
+			if (level2Req && !lifttopMax) {// same as above
 
 				double liftspeed = (m_encoder.getPosition() - 500) / -20;
 
@@ -561,11 +575,15 @@ public class Robot extends IterativeRobot {
 					liftspeed = 1.0;
 				}
 
+				if (liftspeed <= -0.8) {
+					liftspeed = -0.8;
+				}
+
 				m_liftMotor.set(liftspeed);
 
 			}
 
-			if (level2Req && m_encoder.getPosition() >= 500) {
+			if ((level2Req && m_encoder.getPosition() >= 505) || lifttopMax) {
 				m_liftMotor.set(0);
 			}
 
@@ -573,54 +591,64 @@ public class Robot extends IterativeRobot {
 				m_liftMotor.set(0);
 			}
 
-			if (downRequest && m_encoder.getPosition() >= 20) {// same as above but for moving down
+			if (downRequest && m_encoder.getPosition() >= 40) {// same as above but for moving down
 
 				double liftspeed = (m_encoder.getPosition()) / -20;
 
 				if (liftspeed <= -0.6) {
 					liftspeed = -0.6;
+
 				}
 
 				m_liftMotor.set(liftspeed);
 
 			}
-			if (downRequest && m_encoder.getPosition() <= 20) {
+			if (downRequest && m_encoder.getPosition() <= 40) {
 				m_liftMotor.set(0);
 			}
 		}
 
-		if (!ballIn && !autoLockout && !techLock) {// same as the whole big chunk above but with slightly different
-													// values
+		if (!ballIn && !autoLockout && !techLock && m_encoder.getPosition() <= 510 && !lifttopMax) {// same as the whole
+																									// big chunkUS above
+																									// but with slightly
+																									// different
+			// values
 
-			if (levelReq && m_encoder.getPosition() <= 100) {
+			if (levelReq && !lifttopMax) {
 
 				double liftspeed = (m_encoder.getPosition() - 100) / -10;
 
 				if (liftspeed >= 1.0) {
 					liftspeed = 1.0;
 				}
+				if (liftspeed <= -0.8) {
+					liftspeed = -0.8;
+				}
 
 				m_liftMotor.set(liftspeed);
 
 			}
-			if (levelReq && m_encoder.getPosition() >= 100) {
+			if (lifttopMax) {
 
 				m_liftMotor.set(0);
 			}
 
-			if (level2Req && m_encoder.getPosition() <= 515) {
+			if (level2Req && !lifttopMax) {
 
-				double liftspeed = (m_encoder.getPosition() - 515) / -10;
+				double liftspeed = (m_encoder.getPosition() - 500) / -10;
 
 				if (liftspeed >= 1.0) {
 					liftspeed = 1.0;
+				}
+				if (liftspeed <= -0.8) {
+					liftspeed = -0.8;
 				}
 
 				m_liftMotor.set(liftspeed);
 
 			}
 
-			if (level2Req && m_encoder.getPosition() >= 515) {
+			if ((level2Req && m_encoder.getPosition() >= 505) || lifttopMax) {
 				m_liftMotor.set(0);
 			}
 
@@ -628,7 +656,7 @@ public class Robot extends IterativeRobot {
 				m_liftMotor.set(0);
 			}
 
-			if (downRequest && m_encoder.getPosition() >= 20) {
+			if (downRequest && m_encoder.getPosition() >= 40) {
 
 				double liftspeed = (m_encoder.getPosition()) / -10;
 
@@ -639,11 +667,32 @@ public class Robot extends IterativeRobot {
 				m_liftMotor.set(liftspeed);
 
 			}
-			if (downRequest && m_encoder.getPosition() <= 20) {
+			if (downRequest && m_encoder.getPosition() <= 40) {
 				m_liftMotor.set(0);
 			}
 		}
+
+		if(m_encoder.getPosition() >= 510){
+			m_liftMotor.set(0);
+		}
 		/***************************************************************************************************/
+
+		if (techLock && level2d && driverstick.getPOV() != -1 && techstick.getPOV() != -1) {
+
+			m_ballIn.set(ControlMode.PercentOutput, -1.0);
+		}
+
+		if (techLock && techstick.getRawButton(6) && driverstick.getPOV() != -1 && techstick.getPOV() != -1) {
+			m_eject.set(ControlMode.PercentOutput, -0.8);
+		}
+
+		if (!techLock && !level2d && !techstick.getRawButton(6) && driverstick.getPOV() == -1
+				&& techstick.getPOV() == -1) {
+
+			m_ballIn.set(ControlMode.PercentOutput, 0);
+			m_eject.set(ControlMode.PercentOutput, 0);
+
+		}
 
 		/***************************************************************************************************/
 		if (m_encoder.getPosition() >= 250) {
