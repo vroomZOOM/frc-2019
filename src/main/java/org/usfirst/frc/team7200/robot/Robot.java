@@ -165,16 +165,17 @@ public class Robot extends IterativeRobot {
 		NetworkTable table = inst.getTable("datatable");
 		rpi_TurnE = table.getEntry("angle");
 		rpi_Turn = rpi_TurnE.getDouble(0);
-		System.out.println(rpi_Turn);
-		System.out.println((rpi_Turn - 160)/200);
+		//System.out.println(rpi_Turn);
+		
 
-		// auto ball pick up - this needs tweaking
+		double gain = Math.abs((rpi_Turn - 160)/200);
 
-		// if(rpi_Turn)
+		double drive = ((rpi_Turn - 160)/80)*gain;
+		System.out.println(gain);
+
 		if (driverstick.getTrigger()) {
 
-			double drive = (rpi_Turn - 160)/400;
-
+		
 
 			m_myRobot.arcadeDrive(0, turnSpeed);
 
