@@ -168,10 +168,20 @@ public class Robot extends IterativeRobot {
 		//System.out.println(rpi_Turn);
 		
 
-		double gain = Math.abs((rpi_Turn - 160)/200);
+		//double gain = Math.abs((rpi_Turn - 160)/200);
 
-		double drive = ((rpi_Turn - 160)/80)*gain;
-		System.out.println(gain);
+		//double drive = ((rpi_Turn - 160)/80)*gain;
+		//System.out.println(gain);
+
+		// The problem with previous code is at rpi_turn=0 or close the drive =-160/200*160/80 = -4
+		// but drive should be from -1 to1
+
+		//i would do it like this
+		//linear with reduce coefficient ( 0 to 1)
+		double reducer = 1.0; //max value
+		double drive = reducer*(rpi_Turn - 160)/160;
+		//or quadratic
+		//double drive = (rpi_Turn - 160)/160 *Math.abs((rpi_Turn - 160)/160;);
 
 		if (driverstick.getTrigger()) {
 
